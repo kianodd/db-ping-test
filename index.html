@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تست دسترسی دیتابیس‌ها از نت ایران</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,system-ui,Tahoma,sans-serif;background:#0b0e14;color:#e6e9ef;padding:16px;max-width:860px;margin-inline:auto}
+  h1{font-size:20px;margin:8px 0 4px}
+  p.sub{color:#9aa4b2;font-size:13px;line-height:1.9;margin:0 0 14px}
+  button{background:#2f7cf6;color:#fff;border:0;border-radius:10px;padding:12px 18px;font-size:15px;font-family:inherit;cursor:pointer}
+  button:disabled{opacity:.5}
+  button.ghost{background:#1c2330;color:#e6e9ef;border:1px solid #2c3647}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  input{flex:1;min-width:220px;background:#141a24;border:1px solid #2c3647;border-radius:10px;color:#e6e9ef;padding:11px;font-size:14px;font-family:inherit;direction:ltr;text-align:left}
+  .card{background:#121722;border:1px solid #232c3d;border-radius:14px;padding:12px 14px;margin-bottom:10px}
+  .head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .name{font-weight:700;font-size:16px}
+  .engine{color:#8fd0ff;font-size:12px}
+  .free{color:#9aa4b2;font-size:12px;line-height:1.8;margin-top:4px}
+  .host{direction:ltr;text-align:left;color:#7d8798;font-size:11px;font-family:ui-monospace,monospace;word-break:break-all}
+  .stat{font-size:13px;margin-top:6px;min-height:20px}
+  .ok{color:#3ddc84}.bad{color:#ff6b6b}.mid{color:#ffd166}.wait{color:#9aa4b2}
+  .note{background:#181f2c;border:1px solid #2c3647;border-radius:12px;padding:12px 14px;font-size:13px;line-height:2;color:#c6cdd8;margin:14px 0}
+  a{color:#6db3ff}
+</style>
+</head>
+<body>
+<h1>🌐 تست دسترسی دیتابیس‌های رایگان از اینترنت تو</h1>
+<p class="sub">این صفحه از مرورگر خودت (با نت ایران) به هاست API/پنل هر پروایدر وصل می‌شه و زمان پاسخ رو اندازه می‌گیره — ۳ بار برای هرکدوم. هرچی سبزتر و سریع‌تر، یعنی اون شبکه از نت تو استیبل‌تره. دکمه رو بزن و تا تموم شدن تست صبر کن (حدود ۱ دقیقه).</p>
+
+<div class="row">
+  <button id="run">▶️ شروع تست همه</button>
+  <button id="copy" class="ghost" disabled>📋 کپی نتایج</button>
+</div>
+
+<div id="list"></div>
+
+<div class="note">
+  <b>تست هاست واقعی دیتابیست:</b> بعد از ثبت‌نام تو هر سرویسی، آدرس دیتابیسی که بهت می‌ده رو اینجا بچسبون (مثلاً <span dir="ltr">https://mydb-xxxx.turso.io</span> یا <span dir="ltr">https://ep-xxxx.aws.neon.tech</span>) تا همون هاست واقعی هم تست بشه — چون ممکنه پنل یه سرویس روی کلادفلر باشه ولی هاست دیتابیسش روی AWS باشه و برعکس.<br>
+  <div class="row" style="margin-top:8px">
+    <input id="custom" placeholder="https://your-db-host.example.com">
+    <button id="addCustom" class="ghost">➕ تست این هاست</button>
+  </div>
+  <b>محدودیت مهم:</b> مرورگر نمی‌تونه اتصال خام TCP دیتابیس (پورت 3306/5432) رو تست کنه؛ این تست دسترسی HTTPS و پایداری شبکه‌ی هر پروایدر رو نشون می‌ده. برای Turso و Supabase که دسترسی اصلی‌شون خودِ HTTPSـه، نتیجه تقریباً قطعيه. برای MySQL/Postgres خام (TiDB/Neon) تست نهایی بعد از ساخت دیتابیس و وصل شدن از بک‌اند مشخص می‌شه.
+</div>
+
+<script>
+const TARGETS = [
+ {name:"Turso", engine:"SQLite (libSQL)", url:"https://api.turso.tech/", free:"رایگان: ۱۰۰ دیتابیس، ۵GB، ماهی ۵۰۰M خواندن / ۱۰M نوشتن، بدون کارت. API روی AWS CloudFront ـه، نه کلادفلر.", tag:"⭐ پیشنهاد اول برای SQLite"},
+ {name:"TiDB Cloud Starter", engine:"MySQL-compatible", url:"https://api.tidbcloud.com/", free:"رایگان: تا ۵ اینستنس، هرکدوم ۵GiB + ماهی ۵۰M RU، بدون کارت. گیت‌وی روی AWS (Kong) ـه، نه کلادفلر.", tag:"⭐ پیشنهاد اول برای MySQL"},
+ {name:"Neon", engine:"PostgreSQL", url:"https://api.neon.tech/", free:"رایگان: ۱GB برای هر پروژه (تا ۱۰۰ پروژه)، ۱۰۰ ساعت محاسبه/ماه، خواب خودکار بعد ۵ دقیقه بیکاری. پنل روی کلادفلره ولی هاست دیتابیس (*.aws.neon.tech) روی AWSـه.", tag:""},
+ {name:"Supabase", engine:"PostgreSQL + Auth/Storage", url:"https://api.supabase.com/", free:"رایگان: ۵۰۰MB دیتابیس، ۲ پروژه فعال؛ بعد از ۷ روز بیکاری پاز می‌شه. API مدیریتش پشت کلادفلره.", tag:""},
+ {name:"Prisma Postgres", engine:"PostgreSQL", url:"https://api.prisma.io/", free:"رایگان: ۲GB، ماهی ۲۰۰K عملیات، ۵۰ دیتابیس، بدون کارت. API روی کلادفلر.", tag:""},
+ {name:"MongoDB Atlas", engine:"MongoDB (NoSQL)", url:"https://cloud.mongodb.com/", free:"رایگان همیشگی: کلاستر M0 با ۵۱۲MB؛ بعد ۳۰ روز بدون اتصال پاز می‌شه.", tag:""},
+ {name:"Aiven", engine:"PostgreSQL (MySQL رایگانش بازنشسته شد)", url:"https://api.aiven.io/", free:"پستگرس رایگان: ۱ CPU / ۱GB RAM / ۱GB دیسک؛ ممکنه موقع بیکاری خاموش شه. API پشت کلادفلر.", tag:""},
+ {name:"Upstash", engine:"Redis / Serverless", url:"https://api.upstash.com/", free:"ردیس رایگان: ۲۵۶MB، ماهی ۵۰۰K کامند.", tag:""},
+ {name:"Firebase / Firestore", engine:"NoSQL گوگل", url:"https://firestore.googleapis.com/", free:"رایگان: ۱GiB. سرویس‌های گوگل از ایران معمولاً ناپایدارن — برای مقایسه گذاشتم.", tag:"مقایسه‌ای"},
+ {name:"Appwrite Cloud", engine:"BaaS + DB", url:"https://cloud.appwrite.io/v1/health", free:"پلن رایگان داره. پشت کلادفلر.", tag:""},
+ {name:"Cloudflare API (D1)", engine:"SQLite — مبنای مشکل‌دار", url:"https://api.cloudflare.com/", free:"همونی که الان از نت ایران ناپایداره؛ گذاشتم که عددش رو با بقیه مقایسه کنی.", tag:"⚠️ مبنا"},
+ {name:"لیارا (ایران)", engine:"MariaDB/MySQL/PostgreSQL — سرور ایران", url:"https://console.liara.ir/", free:"ایرانی و همیشه در دسترس از داخل؛ ثبت‌نام ۱۰۰ هزار تومن اعتبار اولیه می‌ده. پلن رایگان دائمی دیتابیس تو قیمت‌های فعلی‌ش تأیید نشد.", tag:"🇮🇷 کنترل ایران"},
+ {name:"چابکان (ایران)", engine:"MySQL ابری — سرور ایران", url:"https://chabokan.net/", free:"ایرانی؛ ۱۰۰ هزار تومن اعتبار رایگان شروع. ارزون‌ترین MySQLش حدود ۱۷۷ هزار تومن/ماه.", tag:"🇮🇷 کنترل ایران"},
+ {name:"GitHub (کنترل سالم)", engine:"—", url:"https://github.com/", free:"این یکی رو می‌دونیم از ایران وصله؛ اگه این هم قرمز شد مشکل از نت لحظه‌ای توئه، نه سرویس‌ها.", tag:"کنترل"},
+];
+
+const list = document.getElementById('list');
+const results = {};
+function card(t, id){
+  const d=document.createElement('div'); d.className='card'; d.id='c'+id;
+  d.innerHTML = `<div class="head"><span class="name">${t.name} ${t.tag?`<span class="engine">${t.tag}</span>`:''}</span><span class="engine">${t.engine}</span></div>
+  <div class="free">${t.free}</div><div class="host">${t.url}</div>
+  <div class="stat wait" id="s${id}">در انتظار تست…</div>`;
+  list.appendChild(d);
+}
+TARGETS.forEach(card);
+
+async function ping(url){
+  const t0 = performance.now();
+  const ctrl = new AbortController();
+  const to = setTimeout(()=>ctrl.abort(), 9000);
+  try{
+    await fetch(url + (url.includes('?')?'&':'?') + '_ping=' + Date.now() + Math.random(),
+      {mode:'no-cors', cache:'no-store', signal:ctrl.signal, redirect:'follow'});
+    clearTimeout(to);
+    return Math.round(performance.now()-t0);
+  }catch(e){ clearTimeout(to); return null; }
+}
+async function testOne(t, id){
+  const el = document.getElementById('s'+id);
+  el.className='stat wait'; el.textContent='در حال تست…';
+  const times=[];
+  for(let i=0;i<3;i++){ const r = await ping(t.url); if(r!==null) times.push(r); }
+  if(!times.length){ results[t.name]={ok:0,avg:null}; el.className='stat bad'; el.textContent='❌ هر ۳ بار ناموفق — از نت تو در دسترس نیست / خیلی ناپایداره'; return; }
+  const avg = Math.round(times.reduce((a,b)=>a+b,0)/times.length);
+  const min = Math.min(...times);
+  results[t.name]={ok:times.length, avg, min};
+  el.className = 'stat ' + (times.length===3 && avg<2500 ? 'ok' : 'mid');
+  el.textContent = `${times.length===3?'✅':'⚠️'} وصل شد — ${times.length}/۳ موفق — میانگین ${avg}ms — بهترین ${min}ms`;
+}
+let running=false;
+async function runAll(){
+  if(running) return; running=true;
+  const b=document.getElementById('run'); b.disabled=true; b.textContent='⏳ در حال تست…';
+  await Promise.all(TARGETS.map((t,i)=>testOne(t,i)));
+  // sort cards by avg (reachable first, fastest first)
+  const order = TARGETS.map((t,i)=>({i, r:results[t.name]})).sort((a,b)=>{
+    const av = a.r && a.r.avg!==null ? a.r.avg : 1e12, bv = b.r && b.r.avg!==null ? b.r.avg : 1e12; return av-bv;});
+  order.forEach(o=>list.appendChild(document.getElementById('c'+o.i)));
+  b.disabled=false; b.textContent='🔁 تست دوباره';
+  document.getElementById('copy').disabled=false;
+  running=false;
+}
+document.getElementById('run').onclick = runAll;
+document.getElementById('copy').onclick = async ()=>{
+  const lines = TARGETS.map(t=>{ const r=results[t.name]; return r ? `${t.name}: ${r.ok}/3 موفق${r.avg!==null?`, میانگین ${r.avg}ms`:''}` : `${t.name}: -`; }).join('\n');
+  try{ await navigator.clipboard.writeText('نتایج تست دسترسی دیتابیس‌ها:\n'+lines); alert('کپی شد ✅ بفرستش برای Muse'); }catch(e){ prompt('کپی دستی:', lines); }
+};
+document.getElementById('addCustom').onclick = async ()=>{
+  let v = document.getElementById('custom').value.trim();
+  if(!v) return;
+  if(!/^https:\/\//i.test(v)) v = 'https://' + v.replace(/^\/+/,'');
+  const t = {name:'هاست دلخواه', engine:'custom', url:v, free:'هاستی که خودت وارد کردی', tag:''};
+  const id = 'x' + Date.now();
+  const d=document.createElement('div'); d.className='card'; d.id='c'+id;
+  d.innerHTML = `<div class="head"><span class="name">هاست دلخواه</span></div><div class="host">${v}</div><div class="stat wait" id="s${id}">…</div>`;
+  list.prepend(d);
+  await testOne(t,id);
+};
+</script>
+</body>
+</html>
