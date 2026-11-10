@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تست اتصال و رید/رایت TiDB Cloud</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,system-ui,Tahoma,sans-serif;background:#0b0e14;color:#e6e9ef;padding:16px;max-width:860px;margin-inline:auto}
+  h1{font-size:20px;margin:8px 0 4px}
+  p.sub{color:#9aa4b2;font-size:13px;line-height:1.9;margin:0 0 14px}
+  button{background:#2f7cf6;color:#fff;border:0;border-radius:10px;padding:12px 16px;font-size:14px;font-family:inherit;cursor:pointer;margin:2px}
+  button:disabled{opacity:.5}
+  button.green{background:#1d9e57} button.gray{background:#1c2330;color:#e6e9ef;border:1px solid #2c3647}
+  input[type=text]{width:100%;background:#141a24;border:1px solid #2c3647;border-radius:10px;color:#e6e9ef;padding:11px;font-size:14px;font-family:inherit;margin:6px 0}
+  .card{background:#121722;border:1px solid #232c3d;border-radius:14px;padding:14px;margin-bottom:12px}
+  .stat{font-size:14px;line-height:2;white-space:pre-wrap;word-break:break-word}
+  .ok{color:#3ddc84}.bad{color:#ff6b6b}.mid{color:#ffd166}.dim{color:#9aa4b2}
+  .host{direction:ltr;text-align:left;color:#7d8798;font-size:11px;font-family:ui-monospace,monospace;word-break:break-all}
+  pre{direction:ltr;text-align:left;background:#0a0d13;border:1px solid #232c3d;border-radius:10px;padding:10px;font-size:11px;overflow:auto;max-height:240px;color:#a9c1e8}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td,th{border-bottom:1px solid #232c3d;padding:6px;text-align:right}
+</style>
+</head>
+<body>
+<h1>🐬 تست واقعی TiDB Cloud — اتصال، رایت، رید</h1>
+<p class="sub">کلاستر تستی <b>test-ir</b> (پلن Starter رایگان، ریجن سنگاپور) از طریق Data API خود TiDB صدا زده می‌شه — مستقیم از مرورگر تو و با نت ایرانت، بدون هیچ ورکر و واسطی. هر عملیات زمانش رو هم نشون می‌ده.</p>
+
+<div class="card">
+  <div class="host">Cluster: gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000</div>
+  <div class="host">Data API: https://ap-southeast-1.data.tidbcloud.com/api/v1beta/app/dataapp-McdSZYFZ/endpoint/system/query</div>
+  <div style="margin-top:10px">
+    <button id="btnConn">۱) تست اتصال (SELECT 1)</button>
+    <button id="btnInit" class="gray">۲) ساخت دیتابیس و جدول تست</button>
+  </div>
+  <div class="stat dim" id="stConn">هنوز تستی انجام نشده.</div>
+</div>
+
+<div class="card">
+  <b>✍️ رایت (INSERT)</b>
+  <input type="text" id="noteText" placeholder="یه متن بنویس تا تو دیتابیس ذخیره بشه…" value="سلام از ایران! 🇮🇷">
+  <button id="btnWrite" class="green">ذخیره تو دیتابیس</button>
+  <div class="stat dim" id="stWrite"></div>
+</div>
+
+<div class="card">
+  <b>📖 رید (SELECT)</b><br>
+  <button id="btnRead">خواندن آخرین یادداشت‌ها</button>
+  <div class="stat dim" id="stRead"></div>
+  <div id="rows"></div>
+</div>
+
+<div class="card">
+  <b>آخرین پاسخ خام سرور</b>
+  <pre id="raw">—</pre>
+</div>
+
+<script>
+// ==== Test cluster credentials (throwaway test DB — owner approved publishing) ====
+const PUB = "O3K542I0";
+const PRIV = "9996be74-090d-475b-811e-df2959ecbd5a";
+const CLUSTER_ID = "10429506158055717594";
+const EP = "https://ap-southeast-1.data.tidbcloud.com/api/v1beta/app/dataapp-McdSZYFZ/endpoint/system/query";
+const AUTH = "Basic " + btoa(PUB + ":" + PRIV);
+
+async function runSQL(sql, database){
+  const t0 = performance.now();
+  const res = await fetch(EP, {
+    method: "POST",
+    headers: {"Authorization": AUTH, "Content-Type": "application/json"},
+    body: JSON.stringify({cluster_id: CLUSTER_ID, database: database || "testdb", sql})
+  });
+  const text = await res.text();
+  const ms = Math.round(performance.now() - t0);
+  let json = null; try{ json = JSON.parse(text); }catch(e){}
+  document.getElementById('raw').textContent = "HTTP " + res.status + " — " + ms + "ms\nSQL: " + sql + "\n\n" + text.slice(0, 4000);
+  if(!res.ok) throw new Error("HTTP " + res.status + ": " + text.slice(0,300));
+  return {json, ms};
+}
+function rowsOf(json){
+  // Data Service response shapes vary; dig for rows flexibly
+  const d = (json && (json.data || json)) || {};
+  if(Array.isArray(d.rows)) return d.rows;
+  if(d.result && Array.isArray(d.result.rows)) return d.result.rows;
+  return null;
+}
+function esc(s){ return String(s).replace(/'/g, "''"); }
+function setStat(id, cls, txt){ const e=document.getElementById(id); e.className="stat "+cls; e.textContent=txt; }
+
+document.getElementById('btnConn').onclick = async ()=>{
+  setStat('stConn','dim','در حال اتصال…');
+  try{
+    const {json, ms} = await runSQL("SELECT 1 AS ok, VERSION() AS version", "sys");
+    const rows = rowsOf(json); const ver = rows && rows[0] ? (rows[0].version || "") : "";
+    setStat('stConn','ok',`✅ وصل شد! زمان پاسخ: ${ms}ms — نسخه سرور: ${ver}`);
+  }catch(e){ setStat('stConn','bad','❌ اتصال ناموفق: ' + e.message); }
+};
+document.getElementById('btnInit').onclick = async ()=>{
+  setStat('stConn','dim','در حال ساخت…');
+  try{
+    let r1 = await runSQL("CREATE DATABASE IF NOT EXISTS testdb", "sys");
+    let r2 = await runSQL("CREATE TABLE IF NOT EXISTS notes (id BIGINT PRIMARY KEY AUTO_INCREMENT, text VARCHAR(255), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)", "testdb");
+    setStat('stConn','ok',`✅ دیتابیس testdb و جدول notes آماده‌ست (ساخت دیتابیس ${r1.ms}ms، ساخت جدول ${r2.ms}ms). حالا می‌تونی رایت و رید بزنی.`);
+  }catch(e){ setStat('stConn','bad','❌ خطا: ' + e.message); }
+};
+document.getElementById('btnWrite').onclick = async ()=>{
+  const v = document.getElementById('noteText').value.trim() || "یادداشت خالی";
+  setStat('stWrite','dim','در حال ذخیره…');
+  try{
+    const {ms} = await runSQL(`INSERT INTO notes (text) VALUES ('${esc(v)}')`, "testdb");
+    setStat('stWrite','ok',`✅ ذخیره شد! زمان رایت: ${ms}ms — حالا «خواندن» رو بزن تا ببینیش.`);
+  }catch(e){ setStat('stWrite','bad','❌ خطای رایت (اگه جدول رو نساختی، اول دکمه ۲ رو بزن): ' + e.message); }
+};
+document.getElementById('btnRead').onclick = async ()=>{
+  setStat('stRead','dim','در حال خواندن…');
+  document.getElementById('rows').innerHTML = "";
+  try{
+    const {json, ms} = await runSQL("SELECT id, text, created_at FROM notes ORDER BY id DESC LIMIT 20", "testdb");
+    const rows = rowsOf(json);
+    if(!rows){ setStat('stRead','mid',`⚠️ پاسخ اومد (${ms}ms) ولی ردیفی پیدا نشد — پاسخ خام رو پایین ببین.`); return; }
+    setStat('stRead','ok',`✅ ${rows.length} ردیف خونده شد — زمان رید: ${ms}ms`);
+    let html = "<table><tr><th>#</th><th>متن</th><th>زمان ساخت</th></tr>";
+    for(const r of rows){
+      const cells = Array.isArray(r) ? r : [r.id, r.text, r.created_at];
+      html += `<tr><td>${cells[0] ?? ""}</td><td>${cells[1] ?? ""}</td><td dir="ltr">${cells[2] ?? ""}</td></tr>`;
+    }
+    document.getElementById('rows').innerHTML = html + "</table>";
+  }catch(e){ setStat('stRead','bad','❌ خطای رید: ' + e.message); }
+};
+</script>
+</body>
+</html>
